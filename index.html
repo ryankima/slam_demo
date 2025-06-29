@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>SLAM Agent Demo</title>
+  <style>
+    body {
+      margin: 0;
+      background: #1a1a1a;
+      color: #f0f0f0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    h1 {
+      margin-bottom: 0.5rem;
+      font-size: 2rem;
+      text-align: center;
+    }
+
+    p.instructions {
+      font-size: 1rem;
+      margin-bottom: 1.5rem;
+      color: #ccc;
+      text-align: center;
+    }
+
+    .canvas-container {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 2rem;
+    }
+
+    .canvas-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    canvas {
+      border: 2px solid #555;
+      border-radius: 8px;
+      background-color: #000;
+    }
+
+    .label {
+      margin-top: 0.5rem;
+      font-size: 0.9rem;
+      color: #aaa;
+    }
+  </style>
+</head>
+<body>
+  <h1>SLAM Demo</h1>
+  <p class="instructions">Use <strong>W/S</strong> to move forward/backward and <strong>A/D</strong> to rotate.</p>
+
+  <div class="canvas-container">
+    <div class="canvas-wrapper">
+      <canvas id="realmap" width="600" height="600"></canvas>
+      <div class="label">Real Map View</div>
+    </div>
+    <div class="canvas-wrapper">
+      <canvas id="slammap" width="600" height="600"></canvas>
+      <div class="label">SLAM Map View</div>
+    </div>
+  </div>
+  <div class="label" style="width: 60%">
+    A quick demo written in Rust with WASM for visualizing error propagation in 
+    SLAM applications. Mapping is done based on ray tracing from the agent with
+    noise added with each movement. Localization is attempting with a scoring
+    heuristic based on the SLAM map and current observations.
+  </div>
+
+  <script type="module">
+    import init, { Agent, Map, SlamMap } from "./pkg/slam_demo.js";
+
+    const keys = new Set();
+    document.addEventListener("keydown", e => keys.add(e.key.toLowerCase()));
+    document.addEventListener("keyup", e => keys.delete(e.key.toLowerCase()));
+
+    function isMobile() {
+      return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 600;
+    }
+    
+    if (isMobile()) {
+      document.body.innerHTML = `
+        <div style="color: white; text-align: center; padding: 2rem;">
+          <h1>SLAM Agent Demo</h1>
+          <p>This demo is not available on mobile devices.</p>
+          <p>Please access this page from a desktop or laptop with a keyboard.</p>
+        </div>
+      `;
+    } else {
+      init().then(() => {
+        const realCtx = document.getElementById("realmap").getContext("2d");
+        const slamCtx = document.getElementById("slammap").getContext("2d");
+
+        const map = new Map();
+        const agent = new Agent();
+
+        const slam = new SlamMap();
+        const slamAgent = new Agent();
+
+        map.init(realCtx);
+        agent.spawn(map);
+        slamAgent.copy_pos(agent);
+        slam.init(slamCtx);
+
+        function frame() {
+          map.draw(realCtx);
+          let moved = agent.update(keys, realCtx, map, false, true);
+
+          if (moved) {
+            slamAgent.update(keys, slamCtx, map, true, false);
+            slamAgent.copy_theta(agent);
+            slamAgent.localize(agent, slam, map);
+          }
+
+          slamAgent.copy_theta(agent);
+          agent.draw(realCtx);
+
+          slam.update_with_scan(agent, slamAgent, map);
+          slam.draw(slamCtx);
+          slamAgent.draw(slamCtx);
+
+          requestAnimationFrame(frame);
+        }
+
+        frame();
+      });
+    }
+  </script>
+</body>
+</html>
